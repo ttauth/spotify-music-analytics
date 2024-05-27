@@ -101,3 +101,4 @@ listening_history_df.to_sql('listening_history', conn, if_exists='replace', inde
 
 conn.commit()
 conn.close()
+
