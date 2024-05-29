@@ -18,3 +18,4 @@ listening_history_df.to_csv('listening_history.csv', index=False)
 
 # Close the connection
 conn.close()
+
