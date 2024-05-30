@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS top_tracks (
     artist TEXT,
     album TEXT,
     release_date TEXT,
-    popularity_score INTEGER
+    popularity_score INTEGER,
+    play_count INTEGER DEFAULT 0
 )
 ''')
 print("Table 'top_tracks' created or already exists.")
@@ -39,16 +40,6 @@ CREATE TABLE IF NOT EXISTS top_genres (
 ''')
 print("Table 'top_genres' created or already exists.")
 
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS listening_history (
-    track_name TEXT,
-    artist_name TEXT,
-    played_duration_ms INTEGER,
-    play_count INTEGER
-)
-''')
-print("Table 'listening_history' created or already exists.")
-
 # Fetch top tracks
 def get_top_tracks():
     results = sp.current_user_top_tracks(time_range='medium_term', limit=20)
@@ -59,7 +50,8 @@ def get_top_tracks():
             'artist': track['artists'][0]['name'],
             'album': track['album']['name'],
             'release_date': track['album']['release_date'],
-            'popularity_score': track['popularity']
+            'popularity_score': track['popularity'],
+            'play_count': 0  # Placeholder for play count
         }
         tracks.append(track_info)
         print(f"{track['name']} by {track['artists'][0]['name']}")
@@ -76,7 +68,7 @@ def get_top_genres():
     genre_counts.columns = ['genre', 'occurrences']  # 'occurrences' represents the number of times each genre appears among the top artists
     return genre_counts
 
-# Fetch listening history
+# Fetch listening history and calculate play counts
 def get_listening_history():
     results = sp.current_user_recently_played(limit=50)
     history = {}
@@ -86,27 +78,34 @@ def get_listening_history():
             history[track_name] = {
                 'track_name': track_name,
                 'artist_name': item['track']['artists'][0]['name'],
-                'played_duration_ms': item['track']['duration_ms'],
                 'play_count': 1
             }
         else:
             history[track_name]['play_count'] += 1
-            history[track_name]['played_duration_ms'] += item['track']['duration_ms']
     
     history_df = pd.DataFrame(history.values())
     return history_df
+
+# Merge play counts with top tracks
+def merge_play_counts(top_tracks_df, listening_history_df):
+    play_counts = listening_history_df.groupby('track_name').sum().reset_index()
+    merged_df = pd.merge(top_tracks_df, play_counts, how='left', left_on='name', right_on='track_name')
+    merged_df['play_count'] = merged_df['play_count'].fillna(0).astype(int)
+    merged_df = merged_df.drop(columns=['track_name', 'artist_name'])
+    return merged_df
 
 # Fetch data and save to database
 top_tracks_df = get_top_tracks()
 top_genres_df = get_top_genres()
 listening_history_df = get_listening_history()
 
+print("Merging play counts with top tracks...")
+top_tracks_df = merge_play_counts(top_tracks_df, listening_history_df)
+
 print("Saving top tracks to database...")
 top_tracks_df.to_sql('top_tracks', conn, if_exists='replace', index=False)
 print("Saving top genres to database...")
 top_genres_df.to_sql('top_genres', conn, if_exists='replace', index=False)
-print("Saving listening history to database...")
-listening_history_df.to_sql('listening_history', conn, if_exists='replace', index=False)
 
 print("Data saved to database successfully.")
 
@@ -116,3 +115,4 @@ print("Tables in the database:", cursor.fetchall())
 
 conn.commit()
 conn.close()
+
